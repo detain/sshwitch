@@ -4,7 +4,7 @@ namespace Detain\Sshwitch;
 
 class Sshwitch
 {
-    public static $connection = false; 
+    public static $connection = false;
     public static int $timeout = 10;
     public static string $switch = '';
     public static array $commands = [];
@@ -14,7 +14,7 @@ class Sshwitch
     public static array $commandOutputs = [];
     public static bool $autoDisconnect = true;
     public static bool $chaining = false;
-    
+
     public static function connect() {
         if (!self::$connection) {
             self::$connection = ssh2_connect(CLOGIN_SSH_HOST, CLOGIN_SSH_PORT, ['hostkey' => 'ssh-rsa']);
@@ -29,13 +29,13 @@ class Sshwitch
             }
         }
     }
-    
+
     public static function disconnect() {
         $return = ssh2_disconnect(self::$connection);
         self::$connection = false;
         return self::$chaining ? self::class : $return;
     }
-    
+
     public static function run(string $switch, $commands, $type = 'cisco', &$return = [])
     {
         self::$switch = $switch;
@@ -71,6 +71,10 @@ class Sshwitch
             if (preg_match_all($regex, self::$output, $matches)) {
                 $return = [];
                 for ($idx = 3, $idxMax = count($matches); $idx < $idxMax; $idx++) {
+                    // this code checks for the [#                                       ]   1% .... [########################################] 100%  string and cuts it down to the final entry
+                    if (preg_match_all('/\[#+\s*]\s+\d+%/muU', $matches[$idx][0], $pctMatches) && count($pctSMatches[0]) > 30) {
+                        $matches[$idx][0] = str_replace(implode('', $pctSMatches[0]), $pctSMatches[0][count($pctSMatches[0]) - 1], $matches[$idx][0]);
+                    }
                     $return[] = $matches[$idx][0];
                 }
                 return self::$chaining ? self::class : $return;
@@ -78,7 +82,7 @@ class Sshwitch
         }
         return self::$chaining ? self::class : false;
     }
-    
+
     public static function __callStatic($name, $arguments) {
         $property = lcfirst(substr($name, 3));  // Extracts the property name
 
@@ -99,5 +103,5 @@ class Sshwitch
         }
 
         throw new BadMethodCallException("Method $name does not exist");
-    }    
+    }
 }
