@@ -72,8 +72,8 @@ class Sshwitch
                 $return = [];
                 for ($idx = 3, $idxMax = count($matches); $idx < $idxMax; $idx++) {
                     // this code checks for the [#                                       ]   1% .... [########################################] 100%  string and cuts it down to the final entry
-                    if (preg_match_all('/\[#+\s*]\s+\d+%/muU', $matches[$idx][0], $pctMatches) && count($pctSMatches[0]) > 30) {
-                        $matches[$idx][0] = str_replace(implode('', $pctSMatches[0]), $pctSMatches[0][count($pctSMatches[0]) - 1], $matches[$idx][0]);
+                    if (preg_match_all('/\[#+\s*]\s+\d+%/muU', $matches[$idx][0], $pctMatches) && count($pctMatches[0]) > 30) {
+                        $matches[$idx][0] = str_replace(implode('', $pctMatches[0]), $pctMatches[0][count($pctMatches[0]) - 1], $matches[$idx][0]);
                     }
                     $return[] = $matches[$idx][0];
                 }
