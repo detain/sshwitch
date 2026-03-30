@@ -1,1 +1,4 @@
 /vendor/
+
+# Caliber local state
+.caliber/
