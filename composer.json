@@ -10,13 +10,16 @@
         }
     ],
     "scripts": {
-        "test": "phpunit --bootstrap vendor/autoload.php tests"
+        "test": "phpunit",
+        "test:coverage": "phpunit --coverage-text"
     },
     "require": {
-        "php": "^7.4 || ^8.0"
+        "php": "^7.4 || ^8.0",
+        "ext-ssh2": "*"
     },
     "require-dev": {
         "php-mock/php-mock": "^2.5",
+        "php-mock/php-mock-phpunit": "^2.6",
         "phpunit/phpunit": "^9.0"
     },
     "autoload": {
