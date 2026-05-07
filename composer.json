@@ -3,6 +3,26 @@
     "description": "Login and run commands on your network devices via an ssh connection on a remote server. Easy to use PHP static class methods with static chaining support for rapid development. Supports Cisco and Juniper network routers and switches with more easily added.",
     "type": "library",
     "license": "GPL-3.0",
+    "keywords": [
+        "ssh",
+        "ssh-client",
+        "network-automation",
+        "network-device",
+        "network-device-management",
+        "router",
+        "switch",
+        "juniper",
+        "cisco",
+        "automation",
+        "remote-access",
+        "cli",
+        "command-line",
+        "chainable",
+        "static-chain",
+        "tty",
+        "php",
+        "php-library"
+    ],
     "authors": [
         {
             "name": "Joe Huss",
