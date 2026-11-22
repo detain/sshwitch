@@ -3,6 +3,7 @@
 namespace Detain\Sshwitch\Tests;
 
 use BadMethodCallException;
+use Detain\Sshwitch\RelayHostKeyPolicy;
 use Detain\Sshwitch\Sshwitch;
 use phpmock\phpunit\PHPMock;
 use PHPUnit\Framework\TestCase;
@@ -35,6 +36,15 @@ class SshwitchTest extends TestCase
     /** @var string Body fed back from the stream_get_contents mock. */
     private string $mockStreamContents = "hostname\ncommand output\nexit";
 
+    /** @var array Arguments the ssh2_connect mock last received. */
+    private array $mockConnectArgs = [];
+
+    /** @var string Value the ssh2_fingerprint mock hands back (MD5 hex, B025). */
+    private string $mockFingerprint = '0123456789ABCDEF0123456789ABCDEF';
+
+    /** @var string|null Temp known_hosts store created by a test. */
+    private ?string $tmpKnownHosts = null;
+
     /**
      * Reset all static state and (re)install SSH mocks before each test so
      * tests never bleed into one another.
@@ -45,9 +55,28 @@ class SshwitchTest extends TestCase
         $this->mockAuthReturn = true;
         $this->mockExecReturnsStream = true;
         $this->mockStreamContents = "hostname\ncommand output\nexit";
+        $this->mockConnectArgs = [];
+        $this->mockFingerprint = '0123456789ABCDEF0123456789ABCDEF';
+
+        RelayHostKeyPolicy::$knownHostsFile = null;
+        RelayHostKeyPolicy::$expectedFingerprints = null;
 
         $this->installMocks();
         $this->resetSshwitchState();
+    }
+
+    /**
+     * Drop host-key policy overrides and any temp store created by a test.
+     */
+    protected function tearDown(): void
+    {
+        RelayHostKeyPolicy::$knownHostsFile = null;
+        RelayHostKeyPolicy::$expectedFingerprints = null;
+        if ($this->tmpKnownHosts !== null && is_file($this->tmpKnownHosts)) {
+            @unlink($this->tmpKnownHosts);
+        }
+        $this->tmpKnownHosts = null;
+        parent::tearDown();
     }
 
     /**
@@ -76,7 +105,14 @@ class SshwitchTest extends TestCase
     {
         $this->getFunctionMock('Detain\Sshwitch', 'ssh2_connect')
             ->expects($this->any())
-            ->willReturnCallback(fn () => $this->mockConnectReturn);
+            ->willReturnCallback(function (...$args) {
+                $this->mockConnectArgs = $args;
+                return $this->mockConnectReturn;
+            });
+
+        $this->getFunctionMock('Detain\Sshwitch', 'ssh2_fingerprint')
+            ->expects($this->any())
+            ->willReturnCallback(fn () => $this->mockFingerprint);
 
         $this->getFunctionMock('Detain\Sshwitch', 'ssh2_auth_pubkey_file')
             ->expects($this->any())
@@ -143,6 +179,57 @@ class SshwitchTest extends TestCase
         $result = Sshwitch::connect();
         $this->assertFalse($result, 'connect() should return false when ssh2_auth_pubkey_file fails');
         $this->assertFalse(Sshwitch::$connection, 'connection should be cleared after auth failure');
+    }
+
+    // ---- B025: shared relay host-key policy applied inside connect() ----
+
+    public function testConnectPinsSharedHostKeyAllowlist(): void
+    {
+        Sshwitch::connect();
+
+        $this->assertCount(3, $this->mockConnectArgs, 'ssh2_connect should receive a methods array');
+        $this->assertSame(
+            RelayHostKeyPolicy::HOSTKEY_ALGORITHMS,
+            $this->mockConnectArgs[2]['hostkey'] ?? null,
+            'Legacy single-algorithm ssh-rsa pin must be replaced by the shared allowlist'
+        );
+    }
+
+    public function testConnectProceedsWhenConfiguredFingerprintMatches(): void
+    {
+        RelayHostKeyPolicy::$expectedFingerprints = ['127.0.0.1:22' => '01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF'];
+
+        $this->assertTrue(Sshwitch::connect(), 'Matching seeded fingerprint should authenticate');
+    }
+
+    public function testConnectRefusedWhenConfiguredFingerprintMismatch(): void
+    {
+        RelayHostKeyPolicy::$expectedFingerprints = ['127.0.0.1:22' => 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'];
+
+        $this->assertFalse(Sshwitch::connect(), 'A mismatched host key must refuse the relay connection');
+        $this->assertFalse(Sshwitch::$connection, 'Refused connection must be cleared');
+    }
+
+    public function testConnectRefusedWhenStoredKnownHostKeyChanged(): void
+    {
+        $store = tempnam(sys_get_temp_dir(), 'sshwitch-kh-');
+        $this->tmpKnownHosts = $store;
+        file_put_contents($store, "127.0.0.1:22 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\n");
+        RelayHostKeyPolicy::$knownHostsFile = $store;
+
+        $this->assertFalse(Sshwitch::connect(), 'A host key that changed after accept-new must be refused');
+        $this->assertFalse(Sshwitch::$connection);
+    }
+
+    public function testConnectRecordsAcceptNewOnFirstContact(): void
+    {
+        $store = tempnam(sys_get_temp_dir(), 'sshwitch-kh-');
+        $this->tmpKnownHosts = $store;
+        file_put_contents($store, '');
+        RelayHostKeyPolicy::$knownHostsFile = $store;
+
+        $this->assertTrue(Sshwitch::connect(), 'First-seen key on a configured store should be recorded and accepted');
+        $this->assertStringContainsString('127.0.0.1:22 0123456789ABCDEF0123456789ABCDEF', file_get_contents($store));
     }
 
     public function testRunCommandsArray(): void

@@ -133,7 +133,9 @@ class Sshwitch
 
     /**
      * Establishes an SSH connection to the relay box defined by `CLOGIN_SSH_*`
-     * constants and authenticates using the configured public key.
+     * constants, applies the {@see RelayHostKeyPolicy} host-key check
+     * (B025 — verified before auth), then authenticates using the configured
+     * public key. A refused host key disconnects and reads as connect failure.
      *
      * Idempotent — does nothing if a connection is already open.
      *
@@ -143,10 +145,21 @@ class Sshwitch
     public static function connect()
     {
         if (!self::$connection) {
-            self::$connection = ssh2_connect(CLOGIN_SSH_HOST, CLOGIN_SSH_PORT, ['hostkey' => 'ssh-rsa']);
+            // B025: the former value-blind ssh-rsa-only methods pin filtered
+            // algorithm negotiation (and forced legacy ssh-rsa); it never
+            // checked the key value. One policy now: shared algorithm
+            // allowlist + accept-new host-key verification before auth.
+            self::$connection = ssh2_connect(CLOGIN_SSH_HOST, CLOGIN_SSH_PORT, RelayHostKeyPolicy::connectMethods());
             if (!self::$connection) {
                 self::log('debug', 'sshwitch ssh returned connection:' . var_export(self::$connection, true));
                 self::$connection = false;
+                return self::$chaining ? self::class : false;
+            }
+            try {
+                RelayHostKeyPolicy::verify(self::$connection, CLOGIN_SSH_HOST, (int) CLOGIN_SSH_PORT);
+            } catch (\Throwable $e) {
+                self::log('error', 'sshwitch refusing relay connection — host-key policy: ' . $e->getMessage());
+                self::disconnect();
                 return self::$chaining ? self::class : false;
             }
             if (!ssh2_auth_pubkey_file(self::$connection, CLOGIN_SSH_USER, CLOGIN_SSH_KEY.'.pub', CLOGIN_SSH_KEY)) {
